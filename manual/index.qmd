@@ -20,8 +20,10 @@ format:
 `Heartbeats`*
 
 Every heartbeat as an event: the R-peaks of the recording's ECG channel,
-found exactly as spectHR finds them [@spectHR], each becoming an event at
-its own sub-sample latency. The data are not changed. With the heartbeats
+found exactly as spectHR finds them
+([`rpeak.py`](https://github.com/markspan/spectHR/blob/main/src/spectHR/signal/rpeak.py)),
+CARSPAN's R-peak detection [@carspan2009], each becoming an event at its own
+sub-sample latency. The data are not changed. With the heartbeats
 as events, the rest of an analysis of heartbeat-evoked potentials is
 Alakazam's own: DefineBins chooses the heartbeats per condition, Average
 gives one heartbeat-evoked potential per bin, and ERP Measure, grand
@@ -43,7 +45,8 @@ and a measure of interoception [@park2019; @coll2021].
 
 ## How the R-peaks are found
 
-spectHR's detection, step by step, ported to MATLAB [@spectHR]:
+CARSPAN's R-peak detection [@carspan2009], as spectHR implements it, step by
+step, ported to MATLAB:
 
 1. **Polarity.** The middle third of the channel, less its median, is
    band-passed from 5 to 20 Hz, where the QRS complexes dominate. Tall
@@ -56,8 +59,23 @@ spectHR's detection, step by step, ported to MATLAB [@spectHR]:
 3. **Peaks.** A peak is a local maximum at least the median plus 1.5
    standard deviations of the signal. Of peaks closer than the shortest
    interval, the higher one stays.
-4. **Timing.** Each peak is moved by up to half a sample towards the higher
-   of its two neighbours, so its time is finer than the sampling.
+4. **Timing between samples.** The top of an R-wave seldom falls exactly on
+   a sample. With $x_0$ the peak sample and $x_{-1}$, $x_{+1}$ the samples
+   before and after it, the rise into the peak is $a = x_0 - x_{-1}$ and the
+   fall after it $b = x_0 - x_{+1}$ (neither is negative at a local maximum).
+   The peak's time is moved by
+
+    $$\delta = \frac{a - b}{2\,\max(a, b)}$$
+
+    sample periods. This is the apex of a symmetric triangle through the
+   three samples: a straight line through the peak sample and its lower
+   neighbour, along the steeper flank, and a line of the opposite slope
+   through the higher neighbour meet at $\delta$. A peak with equal
+   neighbours stays where it is ($a = b$, $\delta = 0$); the higher the next
+   sample is relative to the previous one, the later the peak, up to half a
+   sample when the next sample is as high as the peak itself ($b = 0$), and
+   likewise earlier. Where both flanks are flat, spectHR divides by
+   $10^{-12}$ instead of 0 and the peak stays put.
 
 **The same R-peaks as spectHR.** On spectHR's own example ECG (five minutes
 at 1000 Hz), spectHR and this plugin find the same 451 beats on the same
