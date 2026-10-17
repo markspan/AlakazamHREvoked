@@ -1,0 +1,151 @@
+---
+title: "Heartbeats"
+subtitle: "A plugin for Alakazam: heartbeat-evoked potentials"
+lang: en-GB
+bibliography: references.bib
+link-citations: true
+toc: true
+format:
+  html:
+    html-math-method: mathml
+    theme: cosmo
+    fontsize: 1rem
+    linestretch: 1.5
+    fig-cap-location: bottom
+    tbl-cap-location: top
+    anchor-sections: true
+---
+
+*Tools > 1. Preprocessing > Heartbeats · continuous → continuous ·
+`Heartbeats`*
+
+Every heartbeat as an event: the R-peaks of the recording's ECG channel,
+found exactly as spectHR finds them [@spectHR], each becoming an event at
+its own sub-sample latency. The data are not changed. With the heartbeats
+as events, the rest of an analysis of heartbeat-evoked potentials is
+Alakazam's own: DefineBins chooses the heartbeats per condition, Average
+gives one heartbeat-evoked potential per bin, and ERP Measure, grand
+averages and the statistics take it from there.
+
+The heartbeat-evoked potential is the EEG averaged time-locked to the R-wave
+of the ECG [@schandry1986], studied as a cortical response to the heartbeat
+and a measure of interoception [@park2019; @coll2021].
+
+| Option | Default | Meaning |
+|------------------------------|-------------|-------------------------------------------------------|
+| **ECG channel** | the channel typed ECG, else one labelled ECG or EKG | The channel the R-peaks are found in. |
+| **ECG polarity** | Automatic | **Automatic** decides as spectHR does (below); **Upright** or **Inverted** says so instead. An inverted ECG is turned upright to search it, not in the data. |
+| **Shortest interval** | 300 ms | Of two peaks closer than this, the higher stays: spectHR's refractory period, at most 200 beats a minute. |
+| **High-pass before detection** | 0.5 Hz | Removes baseline wander before the search, as spectHR does (0 for none). Only the copy searched is filtered. |
+| **Event code** | heartbeat | The code the heartbeats get. |
+
+: The options of **Heartbeats**. {#tbl-heartbeats-options}
+
+## How the R-peaks are found
+
+spectHR's detection, step by step, ported to MATLAB [@spectHR]:
+
+1. **Polarity.** The middle third of the channel, less its median, is
+   band-passed from 5 to 20 Hz, where the QRS complexes dominate. Tall
+   upward R-waves make its skewness positive, so a negative skewness means
+   an inverted ECG. Only where the skewness is too small to trust (below 0.1
+   either way) the summed prominence of the upward peaks is weighed against
+   that of the downward ones.
+2. **High-pass.** A zero-phase Butterworth high-pass of order 4 at 0.5 Hz
+   removes the baseline wander.
+3. **Peaks.** A peak is a local maximum at least the median plus 1.5
+   standard deviations of the signal. Of peaks closer than the shortest
+   interval, the higher one stays.
+4. **Timing.** Each peak is moved by up to half a sample towards the higher
+   of its two neighbours, so its time is finer than the sampling.
+
+**The same R-peaks as spectHR.** On spectHR's own example ECG (five minutes
+at 1000 Hz), spectHR and this plugin find the same 451 beats on the same
+samples, their times within a ten-thousandth of a microsecond; the same
+holds at 500 Hz, the rate of most EEG. The detector itself, given the same
+signal, gives spectHR's threshold and times to the last bit: its sums are
+numpy's, added in numpy's order. That matters more than it seems: spectHR
+derives the sampling rate from the mean time step and truncates the
+shortest interval in samples, so a rate stored a hair under 1000 Hz gives
+299 samples, not 300, here as in spectHR. The filters agree with scipy's to
+a few parts in ten million, not to the bit: numpy multiplies complex numbers
+with fused multiply-adds where the processor has them, which MATLAB cannot
+copy, and which makes spectHR's own filters differ in the last bit from one
+machine to another. The plugin's tests hold every step to spectHR's own
+results (`SpectHRParityTest`).
+
+## The events
+
+Each heartbeat becomes an event of the chosen code at its R-peak, in time
+order among the other events, with two fields:
+
+- **ibi**, the interval to the next beat in ms (spectHR's interbeat
+  interval series), and
+- **hr**, the heart rate it makes, in beats per minute.
+
+Both are NaN for the last beat before a cut, a rejected stretch or the end.
+As numeric fields of the events they can sort an ERP image of the heartbeats
+([The plot area](https://markspan.github.io/Alakazam/#sec-plot-area)).
+Heartbeats of the same code already in the recording, from an earlier run,
+are replaced.
+
+**Cuts and rejected stretches.** A recording cut by `boundary` events, or
+with rejected (NaN) samples, is searched one stretch at a time, each as
+spectHR would search a recording of its own, so no beat is found across a
+join and no interval spans one. The polarity is decided once, on all the
+valid samples.
+
+The series is taken as it is found: there is no check for missed or extra
+beats. The R-peaks of a clean ECG are found reliably; where the ECG is
+noisy, look at the beats in the recording's view before going on.
+
+## From heartbeats to heartbeat-evoked potentials
+
+1. **Remove the cardiac field artefact.** The heart's own electrical field
+   reaches the scalp, largest during the QRS complex and the T wave
+   [@dirlich1997], and it is locked to the R-peak just as the
+   heartbeat-evoked potential is, so averaging does not remove it. How
+   studies handle it varies [@coll2021; @park2019]. One way is independent
+   component analysis: in **ICA**
+   ([ICA](https://markspan.github.io/Alakazam/#sec-tr-removecomponents)),
+   sort the components by ICLabel's Heart probability [@piontonachini2019]
+   and remove the heart components.
+2. **Heartbeats**, on the continuous recording.
+3. **DefineBins** ([DefineBins](https://markspan.github.io/Alakazam/#sec-tr-definebins))
+   chooses the heartbeats per condition, by what happens around them. The
+   heartbeats in the second after a face (code 1) and after a house (code 2):
+
+    ```
+    epoch [-200, 600] ms
+    bin 1 "Heartbeats after faces"  "heartbeat" any(1) within [-1000, 0] ms
+    bin 2 "Heartbeats after houses" "heartbeat" any(2) within [-1000, 0] ms
+    ```
+
+    A heartbeat near a stimulus carries that stimulus's own evoked response;
+    to leave those out, exclude the heartbeats with a stimulus inside their
+    epoch:
+
+    ```
+    bin 3 "Heartbeats away from stimuli" "heartbeat" not any(1|2) within [-200, 600] ms
+    ```
+
+4. **Average**
+   ([Average](https://markspan.github.io/Alakazam/#sec-tr-average)) gives
+   one heartbeat-evoked potential per bin, and **ERP Measure**
+   ([ERP Measure](https://markspan.github.io/Alakazam/#sec-tr-measure))
+   measures it.
+
+## Troubleshooting
+
+- **"No heartbeat was found."** The channel chosen holds no ECG, or a flat
+  one. Choose the ECG channel.
+- **Twice as many beats as there should be.** Tall T waves can pass the
+  threshold; a longer **Shortest interval** keeps them out, at the cost of
+  missing beats above the rate it allows.
+- **The beats sit on the S wave.** The polarity was judged wrongly, which a
+  noisy ECG can cause: set **ECG polarity** to **Upright** or **Inverted**.
+
+## References {.unnumbered}
+
+::: {#refs}
+:::
