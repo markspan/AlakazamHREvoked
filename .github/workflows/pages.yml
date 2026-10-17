@@ -25,7 +25,8 @@ jobs:
         run: |
           quarto render index.qmd --to html
           mkdir -p ../site
-          cp -r index.html images ../site/
+          cp index.html ../site/
+          [ -d images ] && cp -r images ../site/ || true
           [ -d index_files ] && cp -r index_files ../site/ || true
       - uses: actions/upload-pages-artifact@v3
         with:
