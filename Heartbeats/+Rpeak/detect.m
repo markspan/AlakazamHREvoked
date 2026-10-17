@@ -9,9 +9,12 @@ function [peakTimes, peakIdx, info] = detect(times, values, minDistanceMs)
 %     - of peaks closer than MINDISTANCEMS (a refractory period; spectHR's
 %       default is 300 ms, at most 200 beats a minute), the higher stays;
 %       the distance in samples is truncated, as Python's int() does;
-%     - each peak's time is moved by up to half a sample towards the higher
-%       of its two neighbours: (next - previous) / rate / (2 * the larger of
-%       its two steps).
+%     - each peak is timed between samples, at the apex of a symmetric
+%       triangle through it and its two neighbours: with a the rise into the
+%       peak sample and b the fall after it, it moves by
+%       (a - b) / (2 * max(a, b)) sample periods, from half a sample earlier
+%       to half a sample later (spectHR: (next - previous) / rate /
+%       (2 * the larger step)).
 %   PEAKTIMES are in TIMES' time base (seconds), PEAKIDX the peaks' samples
 %   (1-based). INFO has the rate, the distance in samples and the threshold.
 %

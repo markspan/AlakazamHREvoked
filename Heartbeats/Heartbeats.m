@@ -9,8 +9,9 @@ function [EEG, options] = Heartbeats(input, varargin)
 %        inverted ECG is turned upright for detection, not in the data);
 %     2. a zero-phase 0.5 Hz high-pass, order 4, against baseline wander;
 %     3. the local maxima at least the median plus 1.5 standard deviations,
-%        no two closer than the shortest interval (300 ms), each placed to a
-%        fraction of a sample from its neighbours.
+%        no two closer than the shortest interval (300 ms), each timed
+%        between samples, at the apex of a symmetric triangle through it and
+%        its two neighbours (Rpeak.detect).
 %   The data are not changed. Each R-peak becomes an event of the code
 %   chosen ('heartbeat' by default), at its sub-sample latency, with two
 %   fields: IBI, the interval to the next beat in ms (as spectHR's IBI

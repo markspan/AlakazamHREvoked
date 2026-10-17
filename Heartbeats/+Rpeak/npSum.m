@@ -6,10 +6,13 @@ function s = npSum(x)
 %   2.4 on lengths from 1 to 300000), and so what numpy.mean, numpy.std and
 %   numpy.median of two numbers give.
 %
-%   WHY IT MATTERS. spectHR estimates the sampling rate from the mean time
-%   step and truncates the refractory distance in samples, int(0.3 * fs): a
-%   rate an ulp below 1000 Hz gives 299 samples, an ulp above it 300. MATLAB's
-%   own sum adds in another order, so it can land on the other side.
+%   WHY. spectHR's detector derives its threshold (the median plus 1.5
+%   standard deviations) and the sampling rate from numpy's sums. Added in
+%   numpy's order they come out the same to the last bit, and so do the
+%   threshold and the beats' times (SpectHRParityTest); MATLAB's own sum adds
+%   in another order, which can differ in the last bit. The refractory
+%   distance in samples did not depend on it at any rate tried, 250 to
+%   2048 Hz.
 %
 %   See also RPEAK.DETECT, RPEAK.NPMEDIAN, RPEAK.NPSTD.
     x = double(reshape(x, 1, []));

@@ -8,10 +8,11 @@ classdef SpectHRParityTest < matlab.unittest.TestCase
 %   its 0.5 Hz high-pass and its R-peaks; the same at exactly 500 Hz, as an
 %   EEG recording stores its rate; two made-up signals that reach the
 %   polarity tiebreaker; and scipy's peak finder on plateaus and close
-%   peaks. numpy's sums, which decide the refractory distance in samples
-%   (299 at this recording's rate, a hair under 1000 Hz), must come out to
-%   the last bit, and so must the peak finder; the R-peaks must be the same
-%   beats on the same samples, their times within 1e-10 s.
+%   peaks. numpy's sums must come out to the last bit, and so must the peak
+%   finder, the refractory distance in samples (299 at this recording's
+%   rate, 999.9999998 Hz) and, on the unfiltered ECG, the threshold and the
+%   beats' times; after the filter, the R-peaks must be the same beats on
+%   the same samples, their times within 1e-10 s.
 %
 %   THE FILTERS TO A MILLIONTH. numpy multiplies complex numbers with fused
 %   multiply-adds (in np.prod, and in the BLAS that np.poly's convolutions

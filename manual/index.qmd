@@ -81,11 +81,12 @@ step, ported to MATLAB:
 at 1000 Hz), spectHR and this plugin find the same 451 beats on the same
 samples, their times within a ten-thousandth of a microsecond; the same
 holds at 500 Hz, the rate of most EEG. The detector itself, given the same
-signal, gives spectHR's threshold and times to the last bit: its sums are
-numpy's, added in numpy's order. That matters more than it seems: spectHR
-derives the sampling rate from the mean time step and truncates the
-shortest interval in samples, so a rate stored a hair under 1000 Hz gives
-299 samples, not 300, here as in spectHR. The filters agree with scipy's to
+signal, gives spectHR's threshold and times to the last bit, its sums added
+in numpy's order. The shortest interval is counted in samples as spectHR
+counts it: the rate is derived from the mean time step, and 300 ms times
+that rate is truncated to whole samples. spectHR reads its example
+recording's rate as 999.9999998 Hz, a hair under 1000, so there 300 ms is
+299 samples, here as in spectHR; at a rate of exactly 1000 Hz it is 300. The filters agree with scipy's to
 a few parts in ten million, not to the bit: numpy multiplies complex numbers
 with fused multiply-adds where the processor has them, which MATLAB cannot
 copy, and which makes spectHR's own filters differ in the last bit from one
