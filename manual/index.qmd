@@ -19,11 +19,16 @@ format:
 *Tools > 1. Preprocessing > Heartbeats · continuous → continuous ·
 `Heartbeats`*
 
-Every heartbeat as an event: the R-peaks of the recording's ECG channel,
-found exactly as spectHR finds them
+Every heartbeat as an event: the R-peaks of an ECG, found exactly as spectHR
+finds them
 ([`rpeak.py`](https://github.com/markspan/spectHR/blob/main/src/spectHR/signal/rpeak.py)),
 CARSPAN's R-peak detection [@carspan2009], each becoming an event at its own
-sub-sample latency. The data are not changed. With the heartbeats
+sub-sample latency. The ECG can be a channel of the recording, a stream of
+the XDF file it was read from, or a recording made by another device that
+received the same triggers ([Where the ECG comes from](#sec-sources)); only
+the beats come over, never the ECG itself. A check on the heart's own field
+in the EEG confirms that the beats are on time
+([The check](#sec-check)). The data are not changed. With the heartbeats
 as events, the rest of an analysis of heartbeat-evoked potentials is
 Alakazam's own: DefineBins chooses the heartbeats per condition, Average
 gives one heartbeat-evoked potential per bin, and ERP Measure, grand
@@ -35,11 +40,20 @@ and a measure of interoception [@park2019; @coll2021].
 
 | Option | Default | Meaning |
 |------------------------------|-------------|-------------------------------------------------------|
-| **ECG channel** | the channel typed ECG, else one labelled ECG or EKG | The channel the R-peaks are found in. |
+| **ECG from** | A channel of this recording | Where the ECG is: **A channel of this recording**, **A stream in this recording's XDF file**, or **Another recording, on shared triggers**. |
+| **ECG channel** | the channel typed ECG, else one labelled ECG or EKG | For a channel of this recording: the channel the R-peaks are found in. |
+| **Stream** | blank | For an XDF stream: the ECG stream's name; blank for the first stream typed ECG, else one whose name says ECG or EKG. |
+| **Its channel** (stream) | blank | The stream's ECG channel, by label or number; blank for one labelled ECG or EKG, else its first. |
+| **Recording** | blank | For another recording: its file, a path or a name in this recording's folder; blank for the one file beside this one with its name and another format Alakazam reads. |
+| **Its ECG channel** (recording) | blank | The other recording's ECG channel, by label; blank for one typed or labelled ECG or EKG, else its only channel. |
+| **Shared triggers** | blank | The codes of the triggers both recordings received, e.g. `1 2 3`; blank for every code both have. |
+| **Largest trigger misfit** | 2 ms | How far a paired trigger may lie from the line that carries one clock onto the other (at least one EEG sample). |
 | **ECG polarity** | Automatic | **Automatic** decides as spectHR does (below); **Upright** or **Inverted** says so instead. An inverted ECG is turned upright to search it, not in the data. |
 | **Shortest interval** | 300 ms | Of two peaks closer than this, the higher stays: spectHR's refractory period, at most 200 beats a minute. |
 | **High-pass before detection** | 0.5 Hz | Removes baseline wander before the search, as spectHR does (0 for none). Only the copy searched is filtered. |
 | **Event code** | heartbeat | The code the heartbeats get. |
+| **Check on the heart's field in the EEG** | on | Finds where the heart's field in the EEG peaks relative to the beats ([The check](#sec-check)). |
+| **Move the beats by the lag found** | off | Moves every beat onto the heart's field by the lag the check found. |
 
 : The options of **Heartbeats**. {#tbl-heartbeats-options}
 
@@ -93,6 +107,108 @@ copy, and which makes spectHR's own filters differ in the last bit from one
 machine to another. The plugin's tests hold every step to spectHR's own
 results (`SpectHRParityTest`).
 
+## Where the ECG comes from {#sec-sources}
+
+Only the R-peaks are needed, never the ECG itself, so an ECG recorded apart
+from the EEG serves as well as a channel of it, once its clock is lined up
+with the EEG's. Each R-peak is found in the ECG's own samples, at its own
+rate, and placed in the EEG at the fraction of a sample its time falls at.
+
+**A channel of this recording.** The ECG recorded by the EEG amplifier, on
+the EEG's own samples: nothing to line up.
+
+**A stream in this recording's XDF file.** With Lab Streaming Layer
+[@kothe2025] the ECG often comes as a stream of its own, from a chest strap
+or a separate amplifier, saved in the same XDF file as the EEG; Alakazam
+reads only the EEG stream. Heartbeats reads the file again, as EEGLAB's
+xdfimport reads it (`load_xdf` with its defaults): every stream's time stamps
+on the recording computer's clock, each stream's clock offsets fitted with
+their drift, the jitter removed. The R-peaks are found in the ECG stream,
+timed by its own time stamps, and each is placed between the two EEG
+samples whose time stamps surround it. (EEGLAB's import puts a marker of
+another stream on the nearest sample; a beat keeps its fraction.) A beat
+outside the EEG stream, or in a gap in it where samples were lost, has no
+place: it is left out and counted.
+
+The recording must still be the EEG stream as it was read, every sample at
+its rate, so run Heartbeats before **Resample** or **SelectData**.
+
+**Another recording, on shared triggers.** When the ECG was recorded by
+another device that received the same triggers as the EEG, the two clocks
+are lined up on those triggers, as eye tracking and EEG are
+[@dimigen2011]. The other recording is the file named, or else the one file
+beside this one with the same name and another format Alakazam reads
+(`sub01.vhdr`'s `sub01.edf`). Codes are compared without spaces, without
+BrainVision's `S` and without leading zeros, so `S  1` is `1`.
+
+Two quartz clocks drift apart by tens of parts per million, tens of
+milliseconds an hour, so the line that carries the other recording's time
+onto the EEG's, $t_\text{EEG} = a + b\,t_\text{other}$, has both an offset
+$a$ and a rate ratio $b$. It is found in steps that triggers missing from
+either recording, or extra in one, do not upset:
+
+1. **A vote.** Every pair of same-code triggers, one from each recording,
+   proposes an offset for each rate ratio tried (within 300 parts per
+   million of 1). The true line gathers the right pairs in one narrow bin;
+   the wrong pairs scatter. Trying the ratios is what lines up triggers far
+   apart, a block's onset every ten minutes, say, over which the drift
+   adds up to more than the pairing allows.
+2. **Pairs.** Each trigger of the EEG is paired with the trigger of the
+   same code that the line puts nearest it, within 20 ms, one to one.
+3. **The line**, fitted to the pairs with Huber's loss [@huber1964], so
+   that one trigger timed late counts for less.
+4. **Again** from step 2 with the new line, the tolerance narrowed to six
+   robust standard deviations of the misfit (2 ms at least), until the
+   pairs no longer change.
+
+Heartbeats refuses, rather than place beats on a doubtful line, when fewer
+than three triggers pair; when the triggers are too regular to tell one
+offset from another (one code at a fixed interval fits an offset by a
+whole period nearly as well: the second best vote is more than 0.8 of the
+best); or when a paired trigger lies further from the line than **Largest
+trigger misfit**. The R-peaks are found in the other recording and carried
+along the line, each to its fraction of a sample, their intervals on the
+EEG's clock.
+
+One line carries one clock onto another, so neither recording may have
+cuts: run Heartbeats before **SelectData**.
+
+**What it records.** `EEG.etc.alz.heartbeats.sync` holds how the clocks
+were lined up: for an XDF stream, the file, the streams, the channel and
+rates, and the beats found and left without a place; for another
+recording, the file, the codes, the pairs and the unpaired triggers on
+either side, the misfit (RMS and largest), the drift and the offset. The
+console says the same.
+
+## The check on the heart's field {#sec-check}
+
+Clocks lined up are not yet beats on time. A device can deliver its samples
+late, a wireless one especially, and the delay within a device is one Lab
+Streaming Layer cannot measure or correct [@kothe2025].
+
+The EEG itself shows when the heart beat. The heart's electrical field
+reaches every scalp electrode, largest during the QRS complex
+[@dirlich1997], at the moment of the R-wave. Heartbeats averages the scalp
+channels at the beats, from 200 ms before each to 200 ms after, less each
+channel's mean from 200 to 120 ms before, and finds where the field's
+strength (its global field power: the standard deviation across the
+channels) peaks within 100 ms of the beats, to a fraction of a sample. With
+the beats on time, that is at 0 ms; where it is instead is the timing's
+error from end to end, whatever its cause. The field counts as seen when
+that peak is at least three times the median power before the beats, from
+at least 20 beats and two scalp channels; otherwise nothing is concluded.
+
+The lag is recorded in `EEG.etc.alz.heartbeats.check` and reported, with a
+warning when it is more than 10 ms. **Move the beats by the lag found**
+moves every beat onto the field; a beat moved past either end of the
+recording is left out and counted. The QRS of the scalp field and the R-wave
+of one ECG lead need not peak at quite the same moment, so the check
+confirms the timing to within a few milliseconds: it catches what is wrong
+by more.
+
+The check needs the heart's field in the EEG, so run Heartbeats before the
+heart components are removed (below).
+
 ## The events
 
 Each heartbeat becomes an event of the chosen code at its R-peak, in time
@@ -102,17 +218,18 @@ order among the other events, with two fields:
   interval series), and
 - **hr**, the heart rate it makes, in beats per minute.
 
-Both are NaN for the last beat before a cut, a rejected stretch or the end.
+Both are NaN for the last beat before a cut, a rejected stretch, a gap in
+the ECG or the end of the ECG.
 As numeric fields of the events they can sort an ERP image of the heartbeats
 ([The plot area](https://markspan.github.io/Alakazam/#sec-plot-area)).
 Heartbeats of the same code already in the recording, from an earlier run,
 are replaced.
 
-**Cuts and rejected stretches.** A recording cut by `boundary` events, or
-with rejected (NaN) samples, is searched one stretch at a time, each as
+**Cuts and rejected stretches.** An ECG channel cut by `boundary` events,
+or with rejected (NaN) samples, is searched one stretch at a time, each as
 spectHR would search a recording of its own, so no beat is found across a
-join and no interval spans one. The polarity is decided once, on all the
-valid samples.
+join and no interval spans one; so is an ECG stream with a gap in its time
+stamps. The polarity is decided once, on all the valid samples.
 
 The series is taken as it is found: there is no check for missed or extra
 beats. The R-peaks of a clean ECG are found reliably; where the ECG is
@@ -120,7 +237,9 @@ noisy, look at the beats in the recording's view before going on.
 
 ## From heartbeats to heartbeat-evoked potentials
 
-1. **Remove the cardiac field artefact.** The heart's own electrical field
+1. **Heartbeats**, on the continuous recording as it was read, with the
+   check on: the heart's field is still in the EEG to check the timing on.
+2. **Remove the cardiac field artefact.** The heart's own electrical field
    reaches the scalp, largest during the QRS complex and the T wave
    [@dirlich1997], and it is locked to the R-peak just as the
    heartbeat-evoked potential is, so averaging does not remove it. How
@@ -128,8 +247,7 @@ noisy, look at the beats in the recording's view before going on.
    component analysis: in **ICA**
    ([ICA](https://markspan.github.io/Alakazam/#sec-tr-removecomponents)),
    sort the components by ICLabel's Heart probability [@piontonachini2019]
-   and remove the heart components.
-2. **Heartbeats**, on the continuous recording.
+   and remove the heart components. The heartbeat events stay.
 3. **DefineBins** ([DefineBins](https://markspan.github.io/Alakazam/#sec-tr-definebins))
    chooses the heartbeats per condition, by what happens around them. The
    heartbeats in the second after a face (code 1) and after a house (code 2):
@@ -163,6 +281,24 @@ noisy, look at the beats in the recording's view before going on.
   missing beats above the rate it allows.
 - **The beats sit on the S wave.** The polarity was judged wrongly, which a
   noisy ECG can cause: set **ECG polarity** to **Upright** or **Inverted**.
+- **"This recording no longer has the time base of its XDF stream."** It
+  was resampled or cut after it was read. Run Heartbeats on the recording
+  as it was read, and Resample or SelectData after.
+- **"The XDF file has no stream typed ECG or named so."** The message lists
+  the file's streams: name the ECG stream under **Stream**.
+- **"The shared triggers are too regular."** One code at a fixed interval
+  fits an offset by a whole period nearly as well. Choose codes that come at
+  irregular times under **Shared triggers**, or several codes.
+- **"The two recordings do not line up well enough."** A paired trigger
+  lies further from the line than **Largest trigger misfit**: one device
+  timed a trigger late, or a clock did not run steadily. If one device is
+  known to time its triggers less precisely, allow for it there.
+- **"The heart's field in the EEG peaks more than 10 ms from the beats."**
+  The ECG lags the EEG (or leads it), most often by the ECG device's own
+  delay. **Move the beats by the lag found** puts them on the field.
+- **"The heart's field is not clear enough in the EEG."** Too few beats, too
+  few scalp channels, or the heart components already removed: run
+  Heartbeats before ICA removes them.
 
 ## References {.unnumbered}
 

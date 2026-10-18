@@ -180,8 +180,9 @@ classdef HeartbeatsTest < matlab.unittest.TestCase
 
         function theDialogOffersTheEcgChannelAndSpectHRsSettings(testCase)
         %THEDIALOGOFFERSTHEECGCHANNELANDSPECTHRSSETTINGS  Opened on the
-        %   recording and OK pressed: the ECG channel chosen, and spectHR's
-        %   defaults. A timer presses OK, or Cancel when OK is refused.
+        %   recording and OK pressed: the ECG from this recording's channel,
+        %   the other sources' fields greyed out, spectHR's defaults and the
+        %   check on. A timer presses OK, or Cancel when OK is refused.
             try
                 probe = uifigure('Visible', 'off');
                 delete(probe);
@@ -189,6 +190,7 @@ classdef HeartbeatsTest < matlab.unittest.TestCase
                 testCase.assumeFail(['A uifigure could not be created here: ' err.message]);
             end
             EEG = HeartbeatsTest.recording();
+            state = struct('blankText', [], 'misfit', []);
             pressTimer = timer('StartDelay', 8, 'TimerFcn', @(~, ~) press());
             cleanup = onCleanup(@() delete(pressTimer));
             start(pressTimer);
@@ -196,18 +198,29 @@ classdef HeartbeatsTest < matlab.unittest.TestCase
             clear cleanup;
 
             testCase.assertNotEmpty(options, 'The dialog was cancelled.');
+            testCase.verifyEqual(options.Source, 'channel');
             testCase.verifyEqual(options.Channel, 'ECG');
             testCase.verifyEqual(options.Polarity, 'Automatic');
             testCase.verifyEqual(options.MinIntervalMs, 300);
             testCase.verifyEqual(options.HighpassHz, 0.5);
             testCase.verifyEqual(options.EventType, 'heartbeat');
+            testCase.verifyTrue(options.Check);
+            testCase.verifyFalse(options.CorrectLag);
             testCase.verifyNumElements(HeartbeatsTest.beats(out), 140);
+            off = matlab.lang.OnOffSwitchState('off');
+            testCase.verifyEqual(state.blankText, repmat(off, 1, 5), ...
+                'Stream, its channel, recording, its channel, shared codes: greyed out.');
+            testCase.verifyEqual(state.misfit, off, 'The largest misfit: greyed out.');
 
             function press()
                 f = findall(groot, 'Type', 'figure', 'Name', 'Heartbeats');
                 if isempty(f)
                     return;
                 end
+                texts = findall(f(1), 'Type', 'uieditfield');
+                state.blankText = [texts(strcmp(get(texts, {'Value'}), '')).Enable];
+                numbers = findall(f(1), 'Type', 'uinumericeditfield');
+                state.misfit = [numbers([numbers.Value] == 2).Enable];
                 ok = findall(f(1), 'Type', 'uibutton', 'Text', 'OK');
                 if ~isempty(ok)
                     ok(1).ButtonPushedFcn(ok(1), []);
